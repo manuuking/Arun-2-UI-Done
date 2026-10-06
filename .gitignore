@@ -46,23 +46,3 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
-
-# Secrets, passwords, API keys, and environment variables
-.env
-.env.*
-secrets.json
-config.json
-*.key
-*.pem
-*.jks
-*.keystore
-
-# Firebase related
-google-services.json
-GoogleService-Info.plist
-firebase_credentials.json
-
-# Other potential sensitive files
-credentials.json
-service-account*.json
-client_secret*.json
