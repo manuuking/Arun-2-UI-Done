@@ -15,6 +15,8 @@ import '../../features/payment/payment_record_screen.dart';
 import '../../features/payments/payments_list_screen.dart';
 import '../../features/po/po_dashboard_screen.dart';
 import '../../data/models/invoice.dart';
+import '../../features/invoice_create/html_invoice_preview_screen.dart';
+import '../../features/pdf/generated_pdf_viewer_screen.dart';
 
 // Provide a global key for the navigator
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -131,6 +133,22 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/invoice/preview',
+      builder: (context, state) {
+        final inv = state.extra as Invoice;
+        return HtmlInvoicePreviewScreen(
+          invoice: inv,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/invoice/pdf-viewer',
+      builder: (context, state) {
+        final path = state.extra as String;
+        return GeneratedPdfViewerScreen(pdfPath: path);
+      },
+    ),
+    GoRoute(
+      path: '/invoice/temporary/detail',
       builder: (context, state) {
         final inv = state.extra as Invoice;
         return InvoiceDetailScreen(

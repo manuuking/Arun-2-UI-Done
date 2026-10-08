@@ -30,4 +30,58 @@ class SellerProfile {
     this.signaturePath,
     this.footerNote,
   });
+
+  factory SellerProfile.defaultProfile() {
+    return SellerProfile(
+      name: 'ARUN MENSWARE SERVICE',
+      address: 'Laxmi Chhaya Society-1, Plot No 177, 25 Mtr,\n150 Feet Ring Road, Rajkot, Gujarat - 360005.',
+      gstin: '24AKZPP9424E1ZM',
+      phone: '+91 - 9824417257',
+      email: 'Arunmsws@gmail.com',
+      bankName: 'HDFC RAJKOT',
+      accountNo: '03792000003498',
+      ifsc: 'HDFC0000379',
+      bankEmail: 'Arunmsws@gmail.com',
+      termsAndConditions: [
+        'Interest @ 21% will be charged if payment is not made within 10 days.',
+        'We will not be responsible for loss of the materials when it leaves our premises.',
+        'Payment by A/c Payee Cheque/Draft Only.',
+        'Subject To Rajkot Jurisdiction Only. E & O.E.'
+      ],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'address': address,
+      'gstin': gstin,
+      'phone': phone,
+      'email': email,
+      'bankName': bankName,
+      'accountNo': accountNo,
+      'ifsc': ifsc,
+      'bankEmail': bankEmail,
+      'termsAndConditions': termsAndConditions,
+      'logoPath': logoPath,
+      'signaturePath': signaturePath,
+    };
+  }
+
+  factory SellerProfile.fromMap(Map<dynamic, dynamic> map) {
+    return SellerProfile(
+      name: map['name'] ?? '',
+      address: map['address'] ?? '',
+      gstin: map['gstin'] ?? '',
+      phone: map['phone'] ?? '',
+      email: map['email'] ?? '',
+      bankName: map['bankName'] ?? '',
+      accountNo: map['accountNo'] ?? '',
+      ifsc: map['ifsc'] ?? '',
+      bankEmail: map['bankEmail'],
+      termsAndConditions: (map['termsAndConditions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      logoPath: map['logoPath'],
+      signaturePath: map['signaturePath'],
+    );
+  }
 }

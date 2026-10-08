@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tax Invoice</title>
+<style>
+/* ---------- BASE CSS ---------- */
+html,body{margin:0;background:#525659;font-family:'Helvetica', 'Arial', sans-serif;}
+
+/* ---------- INVOICE: fixed A4 ---------- */
+.page{width:210mm;min-height:297mm;padding:8mm;box-sizing:border-box;background:#fff;color:#000;font-size:9.5pt;line-height:1.35;box-shadow:0 4px 15px rgba(0,0,0,0.3);margin: 20px auto;}
+.sheet{border:1.4pt solid #000;min-height:280mm;display:flex;flex-direction:column;padding:0 0 2mm}
+.sheet *{box-sizing:border-box}
+.hdr{display:grid;grid-template-columns:32mm 1fr 56mm;gap:3mm;padding:3mm 4mm;border-bottom:1.2pt solid #000;align-items:center}
+.logo{width:30mm;height:26mm;object-fit:contain;display:block}
+.logo-ph{width:30mm;height:26mm;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#777}
+.co{text-align:center}
+.co h1{margin:0;font-size:18pt;letter-spacing:.3pt;font-weight:700;line-height:1.1}
+.co .tag{font-weight:600;font-size:9.5pt;margin-top:1mm}
+.co .ad{font-size:8.6pt;margin-top:1.2mm;line-height:1.4}
+.gst{border:1pt solid #000;border-radius:1.5mm;font-size:9pt;text-align:center;padding:2.2mm 2mm}
+.gst b{display:block;font-size:10.5pt;letter-spacing:.3pt}
+.title{background:#2a2a2a;color:#fff;text-align:center;font-weight:700;font-size:12pt;letter-spacing:2pt;padding:1.6mm 0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.body{flex:1;display:flex;flex-direction:column;padding:2mm 2mm 0;gap:2mm}
+.box{border:1pt solid #000;border-radius:1.8mm;overflow:hidden}
+.bh{background:#3a3a3a;color:#fff;font-weight:700;font-size:8.8pt;letter-spacing:.8pt;padding:1.2mm 3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:2mm}
+.info .in{padding:1.5mm 3mm 2mm}
+.kv{display:grid;grid-template-columns:28mm 4mm 1fr;font-size:9pt;line-height:1.6}
+.kv>*{border-bottom:.4pt solid #bbb}
+.kv>:nth-last-child(-n+3){border-bottom:0}
+.kv span:first-child,.kv span:nth-child(3n+1){font-weight:600}
+.kv b{font-weight:500;overflow-wrap:anywhere}
+.kv b.s{font-weight:700}
+/* continuous full-height grid table */
+.tw{flex:1;min-height:70mm;display:grid;grid-template-columns:11mm 1fr 20mm 26mm 22mm 30mm;border:1pt solid #000;border-radius:1.8mm;overflow:hidden}
+.tw>div{border-right:.6pt solid #000;padding:1.8mm 2mm;font-size:9.5pt;overflow-wrap:anywhere}
+.tw>div:nth-child(6n){border-right:0}
+.tw .h{background:#3a3a3a;color:#fff;font-weight:700;font-size:8.8pt;text-align:center;padding:1.8mm 1mm;display:flex;align-items:center;justify-content:center;line-height:1.2;border-right-color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tw .n{text-align:center}.tw .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tw .sep{border-top:.4pt dotted #888}
+.pn{font-weight:700}.ds{font-size:9pt;margin-top:.4mm;white-space:pre-line}.po{font-size:8.8pt;margin-top:.8mm}
+.tw .fl{padding:0}
+.tw .ft{border-top:1pt solid #000;background:#f1f1f1;font-weight:700;display:flex;align-items:center;padding:1.8mm 3mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tw .ft.v{justify-content:flex-end;font-variant-numeric:tabular-nums}
+.tw .ft.pv{justify-content:center;font-weight:500;background:#fff}
+.bot{display:grid;grid-template-columns:1fr 84mm;gap:2mm}
+.bot .col{display:flex;flex-direction:column;gap:2mm}
+.bank{padding:1.5mm 3mm 2mm;font-size:8.8pt}
+.bank .kv{grid-template-columns:24mm 4mm 1fr;font-size:8.8pt;line-height:1.55}
+.terms{flex:1}.terms ol{margin:0;padding:1.5mm 3mm 2mm 7mm;font-size:8.6pt;line-height:1.4}
+.terms li{margin-bottom:.8mm}
+.tot>div{display:grid;grid-template-columns:1fr 32mm;border-bottom:.6pt solid #000;font-size:9.5pt}
+.tot>div>span{padding:1.6mm 3mm}.tot>div>span:last-child{text-align:right;border-left:.6pt solid #000;font-variant-numeric:tabular-nums}
+.tot .g{background:#2b2b2b;color:#fff;font-weight:700;font-size:11pt;border-bottom:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tot .g span:last-child{border-left-color:#fff}
+.words{display:grid;grid-template-columns:20mm 1fr;align-items:center;font-size:9.2pt}
+.words>b{padding:2mm 3mm}.words>span{padding:2mm 3mm 2mm 0}
+.sig{flex:1;min-height:36mm;position:relative;display:flex;flex-direction:column;justify-content:space-between;text-align:center;padding:2mm 3mm 1.5mm;font-size:9.5pt}
+.sig b{position:relative;z-index:1;font-size:10pt}
+.wm{position:absolute;left:50%;top:50%;width:30mm;height:26mm;transform:translate(-50%,-50%);object-fit:contain;opacity:.12;z-index:0}
+.wm.ph{border:1pt dashed #bbb;opacity:.5}
+.sig .sg{position:relative;z-index:1;border-top:.6pt dashed #000;padding-top:1mm;margin:0 6mm}
+.foot{padding:1.2mm 4mm 0;font-size:8pt;display:flex;justify-content:space-between}
+/* ---------- print ---------- */
+@page{size:A4 portrait;margin:0}
+@media print{
+  html,body{background:#fff; margin:0; padding:0;}
+  .page{box-shadow:none; margin:0; width:100%; height:100%;}
+  .bot{break-inside:avoid}
+}
+</style></head>
+<body>
+<div class="page"><div class="sheet">
+  <div class="hdr">
+    $logoHtml
+    <div class="co">
+      <h1>ARUN MENSWARE SERVICE</h1>
+      <div class="tag">Safety Item & Suppliers, Hand Gloves, Cap, Mask</div>
+      <div class="ad">Laxmi Chhaya Society-1, Plot No 177, 25 Mtr, 150 Feet Ring Road, Rajkot, Gujarat - 360005<br>Phone: +91 - 9824417257 &nbsp;|&nbsp; Email: Arunmsws@gmail.com</div>
+    </div>
+    <div class="gst">GSTIN<b>24AKZPP9424E1ZM</b></div>
+  </div>
+  <div class="title">$copyLabel</div>
+  <div class="body">
+  <div class="info">
+    <div class="box"><div class="bh">INVOICE DETAILS</div><div class="in"><div class="kv">
+      <span>Invoice No.</span><span>:</span><b class="s">${invoice.invoiceNo}</b>
+      <span>Date</span><span>:</span><b>$dateStr</b>
+      <span>Challan No.</span><span>:</span><b>${invoice.challanNo ?? '-'}</b>
+      <span>Transport By</span><span>:</span><b>${invoice.transportBy ?? '-'}</b>
+      <span>LR No.</span><span>:</span><b>${invoice.lrNo ?? '-'}</b>
+      <span>LR Date</span><span>:</span><b>${invoice.lrDate ?? '-'}</b>
+    </div></div></div>
+    <div class="box"><div class="bh">BUYER DETAILS</div><div class="in"><div class="kv">
+      <span>M/s</span><span>:</span><b class="s">${invoice.buyerName}</b>
+      <span>Address</span><span>:</span><b>$buyerAddressHtml</b>
+      <span>GSTIN</span><span>:</span><b class="s">${invoice.buyerGstin ?? 'UNREGISTERED'}</b>
+    </div></div></div>
+  </div>
+  
+  <div class="tw">
+    <div class="h">SR.<br>NO.</div><div class="h">DESCRIPTION OF GOODS</div><div class="h">HSN<br>CODE</div><div class="h">QTY.</div><div class="h">RATE<br>(₹)</div><div class="h">AMOUNT<br>(₹)</div>
+    $rows
+    <div class="fl"></div><div class="fl"></div><div class="fl"></div><div class="fl"></div><div class="fl"></div><div class="fl"></div>
+    <div class="ft" style="grid-column:1/3;justify-content:space-between;padding:0"><span style="padding:1.8mm 3mm;border-right:.6pt solid #000;height:100%;display:flex;align-items:center">PARCEL NO. :</span><span style="flex:1;text-align:center;font-weight:500">${invoice.parcelNo ?? "-"}</span></div>
+    <div class="ft" style="grid-column:3/6">SUB TOTAL</div><div class="ft v">₹ ${CurrencyFormatter.formatNumber(invoice.subtotal, decimalDigits: 2)}</div>
+  </div>
+  
+  <div class="bot">
+    <div class="col">
+      <div class="box"><div class="bh">BANK DETAILS</div><div class="bank"><div class="kv">
+        <span>Bank Name</span><span>:</span><b>HDFC RAJKOT</b>
+        <span>Bank Account</span><span>:</span><b>03792000003498</b>
+        <span>IFSC</span><span>:</span><b>HDFC0000379</b>
+        <span>Email</span><span>:</span><b>Arunmsws@gmail.com</b>
+      </div></div></div>
+      <div class="box terms"><div class="bh">TERMS &amp; CONDITIONS</div><ol>
+        <li>Interest @ 21% will be charged from date of the invoice if payment is not made within 10 days.</li>
+        <li>We will not be responsible for loss of the materials when it leaves our premises.</li>
+        <li>Payment by A/c. Payee Cheque/Draft Only.</li>
+        <li>Subject To Rajkot Jurisdiction Only. E & O.E.</li>
+      </ol></div>
+    </div>
+    <div class="col">
+      <div class="box tot">
+        <div><span>SUB TOTAL</span><span>₹ ${CurrencyFormatter.formatNumber(invoice.subtotal, decimalDigits: 2)}</span></div>
+        <div><span>OTHER EXP.</span><span>₹ ${CurrencyFormatter.formatNumber(invoice.otherExp, decimalDigits: 2)}</span></div>
+        $taxRows
+        <div class="g"><span>GRAND TOTAL</span><span>₹ ${CurrencyFormatter.formatNumber(invoice.grandTotal, decimalDigits: 2)}</span></div>
+      </div>
+      <div class="box words"><b>In Words :</b><span>$amountWords</span></div>
+      <div class="box sig"><b>ARUN MENSWARE SERVICE</b>
+        $watermarkHtml
+        <div class="sg">Authorised Signatory</div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="foot"><span>E. &amp; O.E. &nbsp;·&nbsp; This is a Computer Generated Invoice</span><span>For, ARUN MENSWARE SERVICE</span></div>
+  </div></div>
+</body>
+</html>

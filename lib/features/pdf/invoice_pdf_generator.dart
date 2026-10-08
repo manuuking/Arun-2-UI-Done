@@ -8,6 +8,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/number_to_words.dart';
 import '../../data/models/invoice.dart';
+import '../../data/models/seller_profile.dart';
 
 class InvoicePdfGenerator {
   static Future<Uint8List> generateInvoice({
@@ -19,11 +20,16 @@ class InvoicePdfGenerator {
     final dateStr = DateFormat('dd-MM-yyyy').format(inv.invoiceDate);
 
     pw.MemoryImage? logoImage;
+    SellerProfile seller = SellerProfile.defaultProfile();
     try {
       final settingsBox = Hive.box('settings');
       final logoBytes = settingsBox.get('company_logo_bytes');
       if (logoBytes != null && logoBytes is Uint8List) {
         logoImage = pw.MemoryImage(logoBytes);
+      }
+      final Map<dynamic, dynamic>? sellerMap = settingsBox.get('seller_profile');
+      if (sellerMap != null) {
+        seller = SellerProfile.fromMap(sellerMap);
       }
     } catch (e) {
       // Ignore
@@ -41,7 +47,7 @@ class InvoicePdfGenerator {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
-                _buildHeader(logoImage),
+                _buildHeader(logoImage, seller),
                 pw.Divider(thickness: 1, color: PdfColors.black, height: 1),
                 
                 _buildTitleBanner(isDuplicate),
@@ -54,9 +60,9 @@ class InvoicePdfGenerator {
                 
                 pw.Divider(thickness: 1, color: PdfColors.black, height: 1),
                 _buildParcelRow(inv),
-                
+
                 pw.Divider(thickness: 1, color: PdfColors.black, height: 1),
-                _buildBottomSection(inv, logoImage),
+                _buildBottomSection(inv, logoImage, seller),
               ],
             ),
           );
@@ -67,7 +73,7 @@ class InvoicePdfGenerator {
     return pdf.save();
   }
 
-  static pw.Widget _buildHeader(pw.MemoryImage? logoImage) {
+  static pw.Widget _buildHeader(pw.MemoryImage? logoImage, SellerProfile seller) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: pw.Row(
@@ -88,7 +94,7 @@ class InvoicePdfGenerator {
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
                 pw.Text(
-                  'ARUN MENSWARE SERVICE',
+                  seller.name,
                   style: pw.TextStyle(
                     fontSize: 22,
                     fontWeight: pw.FontWeight.bold,
@@ -97,12 +103,12 @@ class InvoicePdfGenerator {
                 ),
                 pw.SizedBox(height: 6),
                 pw.Text(
-                  'Laxmi Chhaya Society-1, Plot No 177, 25 Mtr,\n150 Feet Ring Road, Rajkot, Gujarat - 360005.',
+                  seller.address,
                   textAlign: pw.TextAlign.center,
                   style: const pw.TextStyle(fontSize: 11),
                 ),
                 pw.SizedBox(height: 6),
-                pw.Text('Phone: +91 - 9824417257  |  Email: Arunmsws@gmail.com', style: const pw.TextStyle(fontSize: 11)),
+                pw.Text('Phone: ${seller.phone}  |  Email: ${seller.email}', style: const pw.TextStyle(fontSize: 11)),
               ],
             ),
           ),
@@ -143,7 +149,7 @@ class InvoicePdfGenerator {
               ),
               pw.SizedBox(height: 8),
               pw.Text(
-                'GSTIN : 24AKZPP9424E1ZM',
+                'GSTIN : ${seller.gstin}',
                 style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -302,9 +308,9 @@ class InvoicePdfGenerator {
           } else if (colIndex == 3) {
             content = _itemCell('${item.quantity.toStringAsFixed(0)} ${item.unit}', alignRight: true);
           } else if (colIndex == 4) {
-            content = _itemCell(CurrencyFormatter.formatNumber(item.rate, decimalDigits: 2), alignRight: true);
+            content = _itemCell(CurrencyFormatter.formatNumber(item.rate, decimalDigits: 2), alignCenter: true);
           } else {
-            content = _itemCell(CurrencyFormatter.formatNumber(item.amount, decimalDigits: 2), alignRight: true);
+            content = _itemCell(CurrencyFormatter.formatNumber(item.amount, decimalDigits: 2), alignCenter: true);
           }
           return content;
         }).toList(),
@@ -364,7 +370,7 @@ class InvoicePdfGenerator {
     return pw.Table(
       columnWidths: {
         0: const pw.FlexColumnWidth(1),
-        1: const pw.FixedColumnWidth(150),
+        1: const pw.FixedColumnWidth(151),
         2: const pw.FixedColumnWidth(100),
       },
       border: pw.TableBorder.symmetric(inside: const pw.BorderSide(width: 1, color: PdfColors.black)),
@@ -381,19 +387,18 @@ class InvoicePdfGenerator {
                 pw.Container(width: 1, height: 32, color: PdfColors.black),
                 pw.Expanded(
                   child: pw.Center(
-                    child: pw.Text(inv.parcelNo ?? '-', style: const pw.TextStyle(fontSize: 11)),
+                    child: pw.Text(inv.parcelNo ?? '-', style: const pw.TextStyle(fontSize: 11), textAlign: pw.TextAlign.center),
                   ),
                 ),
               ],
             ),
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: pw.Text('SUB TOTAL', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              child: pw.Center(child: pw.Text('OTHER EXP.', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold))),
             ),
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              alignment: pw.Alignment.centerRight,
-              child: pw.Text('₹ ${CurrencyFormatter.formatNumber(inv.subtotal, decimalDigits: 2)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              child: pw.Center(child: pw.Text('₹ ${CurrencyFormatter.formatNumber(inv.otherExp, decimalDigits: 2)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
             ),
           ],
         ),
@@ -401,11 +406,11 @@ class InvoicePdfGenerator {
     );
   }
 
-  static pw.Widget _buildBottomSection(Invoice inv, pw.MemoryImage? logoImage) {
+  static pw.Widget _buildBottomSection(Invoice inv, pw.MemoryImage? logoImage, SellerProfile seller) {
     return pw.Table(
       columnWidths: {
         0: const pw.FlexColumnWidth(1),
-        1: const pw.FixedColumnWidth(250),
+        1: const pw.FixedColumnWidth(252),
       },
       border: pw.TableBorder.symmetric(inside: const pw.BorderSide(width: 1, color: PdfColors.black)),
       children: [
@@ -436,10 +441,10 @@ class InvoicePdfGenerator {
                         padding: const pw.EdgeInsets.all(8),
                         child: pw.Column(
                           children: [
-                            _metaField2('Bank Name', 'HDFC RAJKOT'),
-                            _metaField2('Bank Account', '03792000003498', isBoldVal: true),
-                            _metaField2('IFSC', 'HDFC0000379', isBoldVal: true),
-                            _metaField2('Email', 'Arunmsws@gmail.com'),
+                            _metaField2('Bank Name', seller.bankName),
+                            _metaField2('Bank Account', seller.accountNo, isBoldVal: true),
+                            _metaField2('IFSC', seller.ifsc, isBoldVal: true),
+                            _metaField2('Email', seller.bankEmail != null && seller.bankEmail!.isNotEmpty ? seller.bankEmail! : seller.email),
                           ],
                         ),
                       ),
@@ -462,12 +467,11 @@ class InvoicePdfGenerator {
                         padding: const pw.EdgeInsets.all(8),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            _termRow('1', 'Interest @ 21% will be charged from date of the invoice if payment is not made within 10 days.'),
-                            _termRow('2', 'We will not be responsible for loss of the materials when it leaves our premises.'),
-                            _termRow('3', 'Payment by A/c. Payee Cheque/Draft Only.'),
-                            _termRow('4', 'Subject To Rajkot Jurisdiction Only. E & O.E.'),
-                          ],
+                          children: seller.termsAndConditions
+                              .asMap()
+                              .entries
+                              .map((e) => _termRow((e.key + 1).toString(), e.value))
+                              .toList(),
                         ),
                       ),
                     ],
@@ -487,24 +491,14 @@ class InvoicePdfGenerator {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
-                _calcRow2('OTHER EXP.', '₹ 0.00'),
+                _calcRow2('SUB TOTAL', '₹ ${CurrencyFormatter.formatNumber(inv.subtotal, decimalDigits: 2)}'),
                 if (inv.cgst > 0) _calcRow2('ADD. CGST 2.5%', '₹ ${CurrencyFormatter.formatNumber(inv.cgst, decimalDigits: 2)}'),
                 if (inv.sgstAmount > 0) _calcRow2('ADD. SGST 2.5%', '₹ ${CurrencyFormatter.formatNumber(inv.sgstAmount, decimalDigits: 2)}'),
                 if (inv.igst > 0) _calcRow2('ADD. IGST 5%', '₹ ${CurrencyFormatter.formatNumber(inv.igst, decimalDigits: 2)}'),
                 if (inv.roundOff != 0) _calcRow2('ROUND OFF', '₹ ${CurrencyFormatter.formatNumber(inv.roundOff, decimalDigits: 2)}'),
                 
                 // GRAND TOTAL
-                pw.Container(
-                  color: PdfColors.black,
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text('GRAND TOTAL', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-                      pw.Text('₹ ${CurrencyFormatter.formatNumber(inv.grandTotal, decimalDigits: 2)}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-                    ],
-                  ),
-                ),
+                _calcRow2('GRAND TOTAL', '₹ ${CurrencyFormatter.formatNumber(inv.grandTotal, decimalDigits: 2)}', isGrandTotal: true),
                 
                 // In Words Box
                 pw.Container(
@@ -543,7 +537,7 @@ class InvoicePdfGenerator {
                           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                           children: [
-                            pw.Text('FOR, ARUN MENSWARE SERVICE', textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                            pw.Text('FOR, ${seller.name}', textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                             pw.Container(
                               decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: PdfColors.black, style: pw.BorderStyle.dashed))),
                               padding: const pw.EdgeInsets.only(top: 6),
@@ -563,15 +557,38 @@ class InvoicePdfGenerator {
     );
   }
 
-  static pw.Widget _calcRow2(String label, String value) {
+  static pw.Widget _calcRow2(String label, String value, {bool isGrandTotal = false}) {
+    final textColor = isGrandTotal ? PdfColors.white : PdfColors.black;
+    final bgColor = isGrandTotal ? PdfColors.black : null;
+    
     return pw.Container(
-      decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 1))),
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      color: bgColor,
+      decoration: isGrandTotal 
+        ? null 
+        : const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.black, width: 1))),
+      child: pw.Table(
+        columnWidths: {
+          0: const pw.FixedColumnWidth(151),
+          1: const pw.FixedColumnWidth(100),
+        },
+        border: pw.TableBorder.symmetric(inside: pw.BorderSide(color: isGrandTotal ? PdfColors.white : PdfColors.black, width: 1)),
         children: [
-          pw.Text(label, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-          pw.Text(value, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          pw.TableRow(
+            children: [
+              pw.Container(
+                padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: isGrandTotal ? 12 : 10),
+                child: pw.Center(
+                  child: pw.Text(label, style: pw.TextStyle(fontSize: isGrandTotal ? 12 : 11, fontWeight: pw.FontWeight.bold, color: textColor)),
+                ),
+              ),
+              pw.Container(
+                padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: isGrandTotal ? 12 : 10),
+                child: pw.Center(
+                  child: pw.Text(value, style: pw.TextStyle(fontSize: isGrandTotal ? 14 : 12, fontWeight: pw.FontWeight.bold, color: textColor)),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

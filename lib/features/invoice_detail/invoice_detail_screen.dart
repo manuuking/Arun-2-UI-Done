@@ -15,8 +15,11 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../data/models/invoice.dart';
 import '../pdf/invoice_pdf_generator.dart';
-import '../pdf/pdf_preview_page.dart';
+import '../pdf/html_invoice_generator.dart';
 import '../providers/providers.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter_html_to_pdf_plus/flutter_html_to_pdf_plus.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 
 class InvoiceDetailScreen extends ConsumerStatefulWidget {
   final String? id;
@@ -63,22 +66,27 @@ class _InvoiceDetailScreenState extends ConsumerState<InvoiceDetailScreen> {
 
     try {
       final now = DateTime.now();
-      // Generate final PDF bytes to verify layout
-      final bytes = await InvoicePdfGenerator.generateInvoice(
-        invoice: inv,
-        isDuplicate: _isDuplicate,
-      );
-
-      // Save locally to documents folder (representing Google Drive / local storage)
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = _getSafeFileName(inv);
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes);
+      
+      File? pdfFile;
+      if (inv.driveFilePath != null && await File(inv.driveFilePath!).exists()) {
+        // Use the HTML-generated PDF passed from preview
+        pdfFile = File(inv.driveFilePath!);
+      } else {
+        // Fallback to old generator if no PDF was passed (should not happen in new flow)
+        final bytes = await InvoicePdfGenerator.generateInvoice(
+          invoice: inv,
+          isDuplicate: _isDuplicate,
+        );
+        final dir = await getApplicationDocumentsDirectory();
+        final fileName = _getSafeFileName(inv);
+        pdfFile = File('${dir.path}/$fileName');
+        await pdfFile.writeAsBytes(bytes);
+      }
 
       // Save structured invoice data into Hive / Firebase
       final finalizedInvoice = inv.copyWith(
         driveFileId: 'drive_${inv.invoiceNo}_${now.millisecondsSinceEpoch}',
-        driveFilePath: file.path,
+        driveFilePath: pdfFile.path,
         updatedAt: now,
       );
 
@@ -99,17 +107,30 @@ class _InvoiceDetailScreenState extends ConsumerState<InvoiceDetailScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Invoice ${inv.invoiceNo} successfully finalized & saved!',
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('SAVE STATUS', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('✓ Invoice Data Saved', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                Text('✓ PDF Saved Locally', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                SizedBox(height: 16),
+                Text('○ Firebase\n   Not connected — will be enabled later', style: TextStyle(color: Colors.grey)),
+                SizedBox(height: 8),
+                Text('○ Google Drive\n   Not connected — will be enabled later', style: TextStyle(color: Colors.grey)),
+              ],
             ),
-            backgroundColor: AppColors.secondary,
-            action: SnackBarAction(
-              label: 'VIEW FILE',
-              textColor: Colors.white,
-              onPressed: () => OpenFilex.open(file.path),
-            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }
@@ -127,17 +148,68 @@ class _InvoiceDetailScreenState extends ConsumerState<InvoiceDetailScreen> {
     }
   }
 
+  Future<File> _getOrGeneratePdfFile(Invoice inv) async {
+    final bool needsRegeneration = (inv.invoiceType == 'duplicate') != _isDuplicate;
+    
+    if (!needsRegeneration && inv.driveFilePath != null) {
+      final existingFile = File(inv.driveFilePath!);
+      if (await existingFile.exists()) {
+        return existingFile;
+      }
+    }
+
+    // If requesting Duplicate, check if we already generated a cached duplicate file
+    if (needsRegeneration && _isDuplicate) {
+      final dir = await getApplicationDocumentsDirectory();
+      final dupFileName = '${_getSafeFileName(inv).replaceAll('.pdf', '')}_DUPLICATE.pdf';
+      final dupFile = File('${dir.path}/$dupFileName');
+      if (await dupFile.exists()) {
+        return dupFile;
+      }
+    }
+
+    // Determine if it's a NEW HTML invoice (has driveFilePath or is temporary)
+    if (inv.driveFilePath != null || widget.temporaryInvoice != null) {
+       Uint8List? logoBytes;
+       try {
+         final logo = Hive.box('settings').get('company_logo_bytes');
+         if (logo != null && logo is Uint8List) {
+           logoBytes = logo;
+         }
+       } catch (_) {}
+
+       final html = await HtmlInvoiceGenerator.generateHtmlInvoice(inv, _isDuplicate, logoBytes);
+       final dir = await getApplicationDocumentsDirectory();
+       final suffix = _isDuplicate ? '_DUPLICATE' : '';
+       final targetFileName = _getSafeFileName(inv).replaceAll('.pdf', '') + suffix;
+       
+       final generatedPdfFile = await FlutterHtmlToPdf.convertFromHtmlContent(
+          content: html,
+          configuration: PrintPdfConfiguration(
+            targetDirectory: dir.path,
+            targetName: targetFileName,
+            printSize: PrintSize.A4,
+            printOrientation: PrintOrientation.Portrait,
+          ),
+       );
+       return generatedPdfFile;
+    } else {
+       // Legacy Fallback
+       final bytes = await InvoicePdfGenerator.generateInvoice(invoice: inv, isDuplicate: _isDuplicate);
+       final dir = await getApplicationDocumentsDirectory();
+       final suffix = _isDuplicate ? '_DUPLICATE' : '';
+       final fileName = _getSafeFileName(inv).replaceAll('.pdf', '') + suffix + '.pdf';
+       final file = File('${dir.path}/$fileName');
+       await file.writeAsBytes(bytes);
+       return file;
+    }
+  }
+
   // 2. DOWNLOAD PDF
   void _downloadPdf(Invoice inv) async {
     try {
-      final bytes = await InvoicePdfGenerator.generateInvoice(
-        invoice: inv,
-        isDuplicate: _isDuplicate,
-      );
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = _getSafeFileName(inv);
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes);
+      final file = await _getOrGeneratePdfFile(inv);
+      final fileName = file.path.split(Platform.pathSeparator).last;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -166,20 +238,16 @@ class _InvoiceDetailScreenState extends ConsumerState<InvoiceDetailScreen> {
 
   // 3. SHARE PDF / WhatsApp (Native Android Share mechanism)
   void _sharePdf(Invoice inv) async {
-    final bytes = await InvoicePdfGenerator.generateInvoice(
-      invoice: inv,
-      isDuplicate: _isDuplicate,
-    );
-    final fileName = _getSafeFileName(inv);
+    final file = await _getOrGeneratePdfFile(inv);
+    final fileName = file.path.split(Platform.pathSeparator).last;
+    final bytes = await file.readAsBytes();
     await Printing.sharePdf(bytes: bytes, filename: fileName);
   }
 
   // 4. PRINT PDF
   void _printPdf(Invoice inv) async {
-    final bytes = await InvoicePdfGenerator.generateInvoice(
-      invoice: inv,
-      isDuplicate: _isDuplicate,
-    );
+    final file = await _getOrGeneratePdfFile(inv);
+    final bytes = await file.readAsBytes();
     await Printing.layoutPdf(onLayout: (_) => bytes);
   }
 
@@ -626,7 +694,27 @@ Rajkot (Mo: +91 9824417257)
 
           // Main A4 PDF Preview widget
           Expanded(
-            child: PdfPreviewPage(invoice: inv, isDuplicate: _isDuplicate),
+            child: FutureBuilder<File>(
+              future: _getOrGeneratePdfFile(inv),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error loading PDF: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: Text('PDF not available.'));
+                }
+                return PDFView(
+                  filePath: snapshot.data!.path,
+                  enableSwipe: true,
+                  swipeHorizontal: false,
+                  autoSpacing: false,
+                  pageFling: false,
+                );
+              },
+            ),
           ),
         ],
       ),

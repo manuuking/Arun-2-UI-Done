@@ -14,6 +14,10 @@ import '../../data/models/product.dart';
 import '../../shared/widgets/section_card.dart';
 import '../providers/providers.dart';
 import 'widgets/step_indicator.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_html_to_pdf_plus/flutter_html_to_pdf_plus.dart';
+import '../pdf/html_invoice_generator.dart';
 
 class InvoiceCreateScreen extends ConsumerStatefulWidget {
   final String? editInvoiceId;
@@ -89,6 +93,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
   late TextEditingController _lrNoCtrl;
   late TextEditingController _lrDateCtrl;
   late TextEditingController _parcelNoCtrl;
+  late TextEditingController _otherExpCtrl;
   DateTime _invoiceDate = DateTime.now();
   String _transportBy = 'VRL Logistics';
   bool _isDuplicateInvoiceNo = false;
@@ -117,6 +122,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
       text: DateFormat('dd MMM yyyy').format(DateTime.now()),
     );
     _parcelNoCtrl = TextEditingController(text: '1');
+    _otherExpCtrl = TextEditingController(text: '0.00');
 
     _invoiceNoCtrl.addListener(_checkDuplicateNumbers);
     _challanNoCtrl.addListener(_checkDuplicateNumbers);
@@ -173,6 +179,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
             existing.lrDate ??
             DateFormat('dd MMM yyyy').format(existing.invoiceDate);
         _parcelNoCtrl.text = existing.parcelNo ?? '1';
+        _otherExpCtrl.text = existing.otherExp > 0 ? existing.otherExp.toStringAsFixed(2) : '0.00';
         _transportBy = existing.transportBy ?? 'VRL Logistics';
         _taxMode = existing.igst > 0 ? 'IGST' : 'CGST_SGST';
         _isDuplicate = existing.invoiceType == 'duplicate';
@@ -317,8 +324,9 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
         .where((r) => r.productId == product.id)
         .toList();
   }
-
-  double get _subtotal => _items.fold(0.0, (sum, i) => sum + i.amount);
+  double get _otherExp => double.tryParse(_otherExpCtrl.text) ?? 0.0;
+  double get _productTotal => _items.fold(0.0, (sum, i) => sum + i.amount);
+  double get _subtotal => _productTotal + _otherExp;
   double get _cgst => _taxMode == 'CGST_SGST' ? (_subtotal * 0.025) : 0.0;
   double get _sgst => _taxMode == 'CGST_SGST' ? (_subtotal * 0.025) : 0.0;
   double get _igst => _taxMode == 'IGST' ? (_subtotal * 0.05) : 0.0;
@@ -331,6 +339,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
     _lrNoCtrl.dispose();
     _lrDateCtrl.dispose();
     _parcelNoCtrl.dispose();
+    _otherExpCtrl.dispose();
     for (final item in _items) {
       item.dispose();
     }
@@ -385,7 +394,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
 
   /// SECTION 17: Save & Generate creates a TEMPORARY PREVIEW only.
   /// Does NOT permanently save to Drive or finalize yet!
-  void _saveAndGeneratePreview() {
+  Future<void> _saveAndGeneratePreview() async {
     if (_selectedCompany == null || _items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -398,112 +407,161 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
       return;
     }
 
-    final now = DateTime.now();
-    final invNo = _invoiceNoCtrl.text.trim().isNotEmpty
-        ? _invoiceNoCtrl.text.trim()
-        : 'INV-${now.millisecondsSinceEpoch}';
-    final challanNo = _challanNoCtrl.text.trim().isNotEmpty
-        ? _challanNoCtrl.text.trim()
-        : null;
-
-    final invoiceItems = _items.map((draft) {
-      final p = draft.product!;
-      final hsn = draft.hsnCtrl.text.trim().isNotEmpty
-          ? draft.hsnCtrl.text.trim()
-          : p.hsnCode;
-      final desc = draft.descCtrl.text.trim().isNotEmpty
-          ? draft.descCtrl.text.trim()
-          : null;
-
-      // Extract primary PO label
-      String? primaryPo;
-      if (draft.allocations.isNotEmpty) {
-        primaryPo = draft.allocations.first.poNo;
-      } else if (draft.isManualPo &&
-          draft.manualPoCtrl.text.trim().isNotEmpty) {
-        primaryPo = draft.manualPoCtrl.text.trim();
-      } else {
-        primaryPo = draft.singlePoNo;
-      }
-
-      return InvoiceItem(
-        id: 'item_${DateTime.now().microsecondsSinceEpoch}_${p.id}',
-        productId: p.id,
-        productName: p.name,
-        description: desc,
-        hsnCode: hsn,
-        unit: p.unit,
-        quantity: draft.quantity,
-        rate: draft.rate,
-        amount: draft.amount,
-        taxSlab: _taxMode == 'CGST_SGST' ? 'CGST+SGST' : 'IGST',
-        cgstRate: _taxMode == 'CGST_SGST' ? 2.5 : 0.0,
-        sgstRate: _taxMode == 'CGST_SGST' ? 2.5 : 0.0,
-        igstRate: _taxMode == 'IGST' ? 5.0 : 0.0,
-        poId: primaryPo,
-        poAllocations: List.from(draft.allocations),
-      );
-    }).toList();
-
-    // Primary PO for invoice header
-    String? headerPo;
-    for (final it in invoiceItems) {
-      if (it.poAllocations.isNotEmpty) {
-        headerPo = it.poAllocations.first.poNo;
-        break;
-      } else if (it.poId != null && it.poId!.isNotEmpty) {
-        headerPo = it.poId;
-        break;
-      }
-    }
-
-    final fullAddr = _selectedAddress != null
-        ? '${_selectedAddress!.fullAddress}, ${_selectedAddress!.city}, ${_selectedAddress!.state} - ${_selectedAddress!.pincode}'
-        : (_selectedCompany!.addresses.isNotEmpty
-              ? '${_selectedCompany!.addresses.first.fullAddress}, ${_selectedCompany!.addresses.first.city}'
-              : 'Rajkot, Gujarat');
-
-    final words = NumberToWords.convert(_grandTotal);
-
-    final previewInvoice = Invoice(
-      id: widget.editInvoiceId ?? invNo,
-      invoiceNo: invNo,
-      challanNo: challanNo,
-      invoiceDate: _invoiceDate,
-      orderNo: headerPo,
-      transportBy: _transportBy,
-      lrNo: _lrNoCtrl.text.trim().isNotEmpty ? _lrNoCtrl.text.trim() : null,
-      lrDate: _lrDateCtrl.text.trim().isNotEmpty
-          ? _lrDateCtrl.text.trim()
-          : null,
-      parcelNo: _parcelNoCtrl.text.trim().isNotEmpty
-          ? _parcelNoCtrl.text.trim()
-          : '1',
-      sellerId: 'arun_mensware_default',
-      buyerId: _selectedCompany!.id,
-      buyerName: _selectedCompany!.name,
-      buyerGstin: _selectedCompany!.gstin.isNotEmpty
-          ? _selectedCompany!.gstin.first
-          : null,
-      buyerAddress: fullAddr,
-      items: invoiceItems,
-      subtotal: _subtotal,
-      cgst: _cgst,
-      sgstAmount: _sgst,
-      igst: _igst,
-      otherExp: 0.0,
-      roundOff: 0.0,
-      grandTotal: _grandTotal,
-      amountInWords: words,
-      invoiceType: _isDuplicate ? 'duplicate' : 'original',
-      status: 'pending',
-      paidAmount: 0.0,
-      createdAt: now,
-      updatedAt: now,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(child: CircularProgressIndicator()),
     );
 
-    // Open Temporary Preview Page
-    context.push('/invoice/preview', extra: previewInvoice);
+    try {
+      final now = DateTime.now();
+      final invNo = _invoiceNoCtrl.text.trim().isNotEmpty
+          ? _invoiceNoCtrl.text.trim()
+          : 'INV-${now.millisecondsSinceEpoch}';
+      final challanNo = _challanNoCtrl.text.trim().isNotEmpty
+          ? _challanNoCtrl.text.trim()
+          : null;
+
+      final invoiceItems = _items.map((draft) {
+        final p = draft.product!;
+        final hsn = draft.hsnCtrl.text.trim().isNotEmpty
+            ? draft.hsnCtrl.text.trim()
+            : p.hsnCode;
+        final desc = draft.descCtrl.text.trim().isNotEmpty
+            ? draft.descCtrl.text.trim()
+            : null;
+
+        // Extract primary PO label
+        String? primaryPo;
+        if (draft.allocations.isNotEmpty) {
+          primaryPo = draft.allocations.first.poNo;
+        } else if (draft.isManualPo &&
+            draft.manualPoCtrl.text.trim().isNotEmpty) {
+          primaryPo = draft.manualPoCtrl.text.trim();
+        } else {
+          primaryPo = draft.singlePoNo;
+        }
+
+        return InvoiceItem(
+          id: 'item_${DateTime.now().microsecondsSinceEpoch}_${p.id}',
+          productId: p.id,
+          productName: p.name,
+          description: desc,
+          hsnCode: hsn,
+          unit: p.unit,
+          quantity: draft.quantity,
+          rate: draft.rate,
+          amount: draft.amount,
+          taxSlab: _taxMode == 'CGST_SGST' ? 'CGST+SGST' : 'IGST',
+          cgstRate: _taxMode == 'CGST_SGST' ? 2.5 : 0.0,
+          sgstRate: _taxMode == 'CGST_SGST' ? 2.5 : 0.0,
+          igstRate: _taxMode == 'IGST' ? 5.0 : 0.0,
+          poId: primaryPo,
+          poAllocations: List.from(draft.allocations),
+        );
+      }).toList();
+
+      // Primary PO for invoice header
+      String? headerPo;
+      for (final it in invoiceItems) {
+        if (it.poAllocations.isNotEmpty) {
+          headerPo = it.poAllocations.first.poNo;
+          break;
+        } else if (it.poId != null && it.poId!.isNotEmpty) {
+          headerPo = it.poId;
+          break;
+        }
+      }
+
+      final fullAddr = _selectedAddress != null
+          ? '${_selectedAddress!.fullAddress}, ${_selectedAddress!.city}, ${_selectedAddress!.state} - ${_selectedAddress!.pincode}'
+          : (_selectedCompany!.addresses.isNotEmpty
+                ? '${_selectedCompany!.addresses.first.fullAddress}, ${_selectedCompany!.addresses.first.city}'
+                : 'Rajkot, Gujarat');
+
+      final words = NumberToWords.convert(_grandTotal);
+
+      final previewInvoice = Invoice(
+        id: widget.editInvoiceId ?? invNo,
+        invoiceNo: invNo,
+        challanNo: challanNo,
+        invoiceDate: _invoiceDate,
+        orderNo: headerPo,
+        transportBy: _transportBy,
+        lrNo: _lrNoCtrl.text.trim().isNotEmpty ? _lrNoCtrl.text.trim() : null,
+        lrDate: _lrDateCtrl.text.trim().isNotEmpty
+            ? _lrDateCtrl.text.trim()
+            : null,
+        parcelNo: _parcelNoCtrl.text.trim().isNotEmpty
+            ? _parcelNoCtrl.text.trim()
+            : '1',
+        sellerId: 'arun_mensware_default',
+        buyerId: _selectedCompany!.id,
+        buyerName: _selectedCompany!.name,
+        buyerGstin: _selectedCompany!.gstin.isNotEmpty
+            ? _selectedCompany!.gstin.first
+            : null,
+        buyerAddress: fullAddr,
+        items: invoiceItems,
+        subtotal: _subtotal,
+        cgst: _cgst,
+        sgstAmount: _sgst,
+        igst: _igst,
+        otherExp: _otherExp,
+        roundOff: 0.0,
+        grandTotal: _grandTotal,
+        amountInWords: words,
+        invoiceType: _isDuplicate ? 'duplicate' : 'original',
+        status: 'pending',
+        paidAmount: 0.0,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      Uint8List? logoBytes;
+      try {
+        final logo = Hive.box('settings').get('company_logo_bytes');
+        if (logo != null && logo is Uint8List) {
+          logoBytes = logo;
+        }
+      } catch (_) {}
+
+      final html = await HtmlInvoiceGenerator.generateHtmlInvoice(
+        previewInvoice,
+        previewInvoice.invoiceType == 'duplicate',
+        logoBytes,
+      );
+
+      final dir = await getApplicationDocumentsDirectory();
+      final targetFileName = 'Invoice_${previewInvoice.invoiceNo.replaceAll('/', '_')}';
+      
+      final generatedPdfFile = await FlutterHtmlToPdf.convertFromHtmlContent(
+        content: html,
+        configuration: PrintPdfConfiguration(
+          targetDirectory: dir.path,
+          targetName: targetFileName,
+          printSize: PrintSize.A4,
+          printOrientation: PrintOrientation.Portrait,
+        ),
+      );
+
+      final invoiceWithPdf = previewInvoice.copyWith(driveFilePath: generatedPdfFile.path);
+
+      if (mounted) {
+        Navigator.pop(context); // Close dialog
+        context.push('/invoice/temporary/detail', extra: invoiceWithPdf);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Preview Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -593,7 +651,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     label: const Text(
-                      'SAVE & GENERATE',
+                      'PREVIEW INVOICE',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
@@ -1282,9 +1340,11 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
                               const SizedBox(height: 12),
                               Builder(
                                 builder: (context) {
-                                  final bal = poBalances.firstWhere(
+                                  final balIdx = poBalances.indexWhere(
                                     (b) => b.po.poNo == draft.singlePoNo,
                                   );
+                                  if (balIdx == -1) return const SizedBox.shrink();
+                                  final bal = poBalances[balIdx];
                                   // Auto-sync qty
                                   draft.allocations[0] = POAllocation(
                                     poId: draft.allocations.first.poId,
@@ -1526,31 +1586,67 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
                 },
               ),
               const SizedBox(height: 16),
+              const SizedBox(height: 16),
+              const Divider(height: 1, thickness: 1, color: AppColors.outlineVariant),
+              const SizedBox(height: 16),
               _buildSummaryRow(
-                'Taxable Subtotal',
-                '₹${CurrencyFormatter.formatNumber(_subtotal)}',
+                'Product Total',
+                '₹${CurrencyFormatter.formatNumber(_productTotal)}',
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Other Expense',
+                    style: AppTextStyles.bodyMd,
+                  ),
+                  SizedBox(
+                    width: 120,
+                    child: TextFormField(
+                      controller: _otherExpCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.right,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixText: '₹ ',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1, thickness: 1, color: AppColors.outlineVariant),
+              const SizedBox(height: 16),
+              _buildSummaryRow(
+                'SUB TOTAL',
+                '₹${CurrencyFormatter.formatNumber(_subtotal)}',
+                isBold: true,
+              ),
+              const SizedBox(height: 12),
               if (_taxMode == 'CGST_SGST') ...[
                 _buildSummaryRow(
                   'Add CGST 2.5%',
                   '₹${CurrencyFormatter.formatNumber(_cgst)}',
-                  isMuted: true,
                 ),
                 const SizedBox(height: 6),
                 _buildSummaryRow(
                   'Add SGST 2.5%',
                   '₹${CurrencyFormatter.formatNumber(_sgst)}',
-                  isMuted: true,
                 ),
               ] else ...[
                 _buildSummaryRow(
                   'Add IGST 5.0%',
                   '₹${CurrencyFormatter.formatNumber(_igst)}',
-                  isMuted: true,
                 ),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              const Divider(height: 1, thickness: 1, color: AppColors.outlineVariant),
+              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -1627,7 +1723,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
     );
   }
 
-  Widget _buildSummaryRow(String label, String value, {bool isMuted = false}) {
+  Widget _buildSummaryRow(String label, String value, {bool isMuted = false, bool isBold = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1635,6 +1731,7 @@ class _InvoiceCreateScreenState extends ConsumerState<InvoiceCreateScreen> {
           label,
           style: AppTextStyles.bodyMd.copyWith(
             color: isMuted ? AppColors.onSurfaceVariant : AppColors.onSurface,
+            fontWeight: isBold ? FontWeight.bold : null,
           ),
         ),
         Text(

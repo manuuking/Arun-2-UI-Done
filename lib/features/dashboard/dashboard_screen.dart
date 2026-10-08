@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -151,9 +152,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            Text(
-              'Arun Mensware Service',
-              style: AppTextStyles.headlineSm.copyWith(fontSize: 16),
+            ValueListenableBuilder(
+              valueListenable: Hive.box('settings').listenable(keys: ['seller_profile']),
+              builder: (context, Box box, _) {
+                final Map<dynamic, dynamic>? sellerMap = box.get('seller_profile');
+                final name = sellerMap != null ? (sellerMap['name'] ?? 'Arun Mensware Service') : 'Arun Mensware Service';
+                return Text(
+                  name,
+                  style: AppTextStyles.headlineSm.copyWith(fontSize: 16),
+                );
+              },
             ),
           ],
         ),

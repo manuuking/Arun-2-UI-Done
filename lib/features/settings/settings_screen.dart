@@ -1,11 +1,12 @@
-
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/models/seller_profile.dart';
 import 'number_series_settings_screen.dart';
+import 'seller_profile_edit_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -18,52 +19,70 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         children: [
           // Seller Profile
-          Card(
-            margin: const EdgeInsets.only(bottom: 24),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ValueListenableBuilder(
+            valueListenable: Hive.box('settings').listenable(keys: ['seller_profile']),
+            builder: (context, Box box, _) {
+              final Map<dynamic, dynamic>? sellerMap = box.get('seller_profile');
+              final profile = sellerMap != null ? SellerProfile.fromMap(sellerMap) : SellerProfile.defaultProfile();
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 24),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'SELLER PROFILE',
-                        style: AppTextStyles.labelSm.copyWith(
-                          color: AppColors.onSurfaceVariant,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'SELLER PROFILE',
+                            style: AppTextStyles.labelSm.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SellerProfileEditScreen(),
+                                ),
+                              );
+                            }, 
+                            child: const Text('Edit')
+                          ),
+                        ],
                       ),
-                      TextButton(onPressed: () {}, child: const Text('Edit')),
+                      const SizedBox(height: 8),
+                      Text(
+                        profile.name,
+                        style: AppTextStyles.headlineSm,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'GSTIN: ${profile.gstin}',
+                        style: AppTextStyles.numericTable,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        profile.address,
+                        style: AppTextStyles.bodySm,
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      Text('Bank Details', style: AppTextStyles.labelMd),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${profile.bankName}\nA/c: ${profile.accountNo}\nIFSC: ${profile.ifsc}${profile.bankEmail != null && profile.bankEmail!.isNotEmpty ? '\nEmail: ${profile.bankEmail}' : ''}',
+                        style: AppTextStyles.bodySm,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Arun Mensware Service',
-                    style: AppTextStyles.headlineSm,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'GSTIN: 24AKZPP9424E1ZM',
-                    style: AppTextStyles.numericTable,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Laxmi Chhaya Society-1, Plot No 177, 25 Mtr, 150 Feet Ring Road,\nRajkot, Gujarat - 360005',
-                    style: AppTextStyles.bodySm,
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Text('Bank Details', style: AppTextStyles.labelMd),
-                  const SizedBox(height: 4),
-                  Text(
-                    'HDFC Rajkot\nA/c: 03792000003498\nIFSC: HDFC0000379',
-                    style: AppTextStyles.bodySm,
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            }
           ),
 
           // Tax Settings
